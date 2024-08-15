@@ -1,0 +1,249 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Enhanced Food Truck Cost Calculator</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/3.7.0/chart.min.js"></script>
+    <style>
+        body { font-family: Arial, sans-serif; max-width: 1000px; margin: 0 auto; padding: 20px; }
+        table { width: 100%; border-collapse: collapse; margin-bottom: 20px; }
+        th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }
+        input[type="number"] { width: 100px; }
+        button { margin: 10px 5px 10px 0; }
+        #charts { display: flex; flex-wrap: wrap; justify-content: space-around; }
+        .chart-container { width: 45%; min-width: 300px; margin-bottom: 20px; }
+        #detailedBreakdown { margin-top: 20px; }
+    </style>
+</head>
+<body>
+    <h1>Enhanced Food Truck Cost Calculator</h1>
+    
+    <table id="ingredientTable">
+        <tr>
+            <th>Ingredient</th>
+            <th>Quantity</th>
+            <th>Unit</th>
+            <th>Cost</th>
+            <th>Action</th>
+        </tr>
+    </table>
+    
+    <button onclick="addRow()">Add Ingredient</button>
+    <button onclick="saveIngredients()">Save Ingredients</button>
+    <button onclick="loadIngredients()">Load Ingredients</button>
+    
+    <div>
+        <label for="marginPercentage">Target Margin Percentage:</label>
+        <input type="number" id="marginPercentage" value="70" min="0" max="100">%
+    </div>
+    
+    <button onclick="calculateCosts()">Calculate</button>
+    
+    <div id="results">
+        <h2>Results</h2>
+        <p>Total Food Cost: $<span id="totalFoodCost">0.00</span></p>
+        <p>Suggested Selling Price: $<span id="sellingPrice">0.00</span></p>
+        <p>Profit Margin: $<span id="profitMargin">0.00</span></p>
+    </div>
+    
+    <div id="charts">
+        <div class="chart-container">
+            <canvas id="costBreakdownChart"></canvas>
+        </div>
+        <div class="chart-container">
+            <canvas id="profitChart"></canvas>
+        </div>
+    </div>
+
+    <div id="detailedBreakdown">
+        <h2>Detailed Cost Breakdown</h2>
+        <table id="breakdownTable">
+            <tr>
+                <th>Ingredient</th>
+                <th>Cost</th>
+                <th>Percentage of Total</th>
+            </tr>
+        </table>
+    </div>
+
+    <script>
+        let ingredients = [];
+
+        function addRow(name = "", quantity = "", unit = "", cost = "") {
+            const table = document.getElementById('ingredientTable');
+            const newRow = table.insertRow(-1);
+            newRow.innerHTML = `
+                <td><input type="text" placeholder="Ingredient name" value="${name}"></td>
+                <td><input type="number" step="0.01" min="0" value="${quantity}"></td>
+                <td><input type="text" placeholder="oz, ea, etc." value="${unit}"></td>
+                <td><input type="number" step="0.01" min="0" value="${cost}"></td>
+                <td><button onclick="removeRow(this)">Remove</button></td>
+            `;
+        }
+
+        function removeRow(btn) {
+            const row = btn.parentNode.parentNode;
+            row.parentNode.removeChild(row);
+        }
+
+        function saveIngredients() {
+            const table = document.getElementById('ingredientTable');
+            const rows = table.getElementsByTagName('tr');
+            ingredients = [];
+
+            for (let i = 1; i < rows.length; i++) {
+                const cells = rows[i].getElementsByTagName('td');
+                ingredients.push({
+                    name: cells[0].getElementsByTagName('input')[0].value,
+                    quantity: cells[1].getElementsByTagName('input')[0].value,
+                    unit: cells[2].getElementsByTagName('input')[0].value,
+                    cost: cells[3].getElementsByTagName('input')[0].value
+                });
+            }
+
+            localStorage.setItem('foodTruckIngredients', JSON.stringify(ingredients));
+            alert('Ingredients saved successfully!');
+        }
+
+        function loadIngredients() {
+            const savedIngredients = localStorage.getItem('foodTruckIngredients');
+            if (savedIngredients) {
+                ingredients = JSON.parse(savedIngredients);
+                const table = document.getElementById('ingredientTable');
+                // Clear existing rows except header
+                while (table.rows.length > 1) {
+                    table.deleteRow(1);
+                }
+                // Add saved ingredients
+                ingredients.forEach(ing => addRow(ing.name, ing.quantity, ing.unit, ing.cost));
+                alert('Ingredients loaded successfully!');
+            } else {
+                alert('No saved ingredients found!');
+            }
+        }
+
+        function calculateCosts() {
+            const table = document.getElementById('ingredientTable');
+            const rows = table.getElementsByTagName('tr');
+            let totalCost = 0;
+            ingredients = [];
+
+            for (let i = 1; i < rows.length; i++) {
+                const cells = rows[i].getElementsByTagName('td');
+                const cost = parseFloat(cells[3].getElementsByTagName('input')[0].value) || 0;
+                totalCost += cost;
+                ingredients.push({
+                    name: cells[0].getElementsByTagName('input')[0].value,
+                    cost: cost
+                });
+            }
+
+            const marginPercentage = parseFloat(document.getElementById('marginPercentage').value) / 100;
+            const sellingPrice = totalCost / (1 - marginPercentage);
+            const profitMargin = sellingPrice - totalCost;
+
+            document.getElementById('totalFoodCost').textContent = totalCost.toFixed(2);
+            document.getElementById('sellingPrice').textContent = sellingPrice.toFixed(2);
+            document.getElementById('profitMargin').textContent = profitMargin.toFixed(2);
+
+            updateCharts(ingredients, totalCost, profitMargin);
+            updateDetailedBreakdown(ingredients, totalCost);
+        }
+
+        let costBreakdownChart, profitChart;
+
+        function updateCharts(ingredients, totalCost, profitMargin) {
+            updateCostBreakdownChart(ingredients);
+            updateProfitChart(totalCost, profitMargin);
+        }
+
+        function updateCostBreakdownChart(ingredients) {
+            const ctx = document.getElementById('costBreakdownChart').getContext('2d');
+            
+            if (costBreakdownChart) {
+                costBreakdownChart.destroy();
+            }
+
+            costBreakdownChart = new Chart(ctx, {
+                type: 'pie',
+                data: {
+                    labels: ingredients.map(ing => ing.name),
+                    datasets: [{
+                        data: ingredients.map(ing => ing.cost),
+                        backgroundColor: [
+                            '#FF6384', '#36A2EB', '#FFCE56', '#4BC0C0', '#9966FF', '#FF9F40'
+                        ]
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    title: {
+                        display: true,
+                        text: 'Ingredient Cost Breakdown'
+                    }
+                }
+            });
+        }
+
+        function updateProfitChart(totalCost, profitMargin) {
+            const ctx = document.getElementById('profitChart').getContext('2d');
+            
+            if (profitChart) {
+                profitChart.destroy();
+            }
+
+            profitChart = new Chart(ctx, {
+                type: 'bar',
+                data: {
+                    labels: ['Cost vs Profit'],
+                    datasets: [
+                        {
+                            label: 'Food Cost',
+                            data: [totalCost],
+                            backgroundColor: '#36A2EB'
+                        },
+                        {
+                            label: 'Profit Margin',
+                            data: [profitMargin],
+                            backgroundColor: '#FF6384'
+                        }
+                    ]
+                },
+                options: {
+                    responsive: true,
+                    title: {
+                        display: true,
+                        text: 'Cost vs Profit'
+                    },
+                    scales: {
+                        x: { stacked: true },
+                        y: { stacked: true }
+                    }
+                }
+            });
+        }
+
+        function updateDetailedBreakdown(ingredients, totalCost) {
+            const table = document.getElementById('breakdownTable');
+            // Clear existing rows except header
+            while (table.rows.length > 1) {
+                table.deleteRow(1);
+            }
+            // Add ingredient breakdown
+            ingredients.forEach(ing => {
+                const row = table.insertRow(-1);
+                const percentage = (ing.cost / totalCost * 100).toFixed(2);
+                row.innerHTML = `
+                    <td>${ing.name}</td>
+                    <td>$${ing.cost.toFixed(2)}</td>
+                    <td>${percentage}%</td>
+                `;
+            });
+        }
+
+        // Initialize with one empty row
+        addRow();
+    </script>
+</body>
+</html>
